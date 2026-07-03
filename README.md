@@ -41,6 +41,27 @@ Open-Meteo Previous Runs API의 `temperature_2m_previous_day0`(라벨: `openmete
 
 따라서 `run_slice.py` 기본값은 `--truth asos`이며, 프록시는 키 없음·API 실패 시에만 fallback합니다. **POP Brier 검증에는 ASOS 강수 이진 실측이 필수**입니다.
 
+## Open-Meteo 리드타임 근사 (`lead_time_h`)
+
+Open-Meteo Previous Runs의 `temperature_2m_previous_day1` / `previous_day2`는 표준 스키마에 **`lead_time_h=24` / `48`** 으로 적재되지만, 이 값은 **정확한 리드타임이 아니라 근사 라벨**입니다.
+
+| API 필드 | `lead_time_h` (근사) | 실제 의미 |
+|---|---|---|
+| `previous_day1` | 24 | **발표일이 1일 전**인 ECMWF run의 예보 (`days_ahead=1`) |
+| `previous_day2` | 48 | **발표일이 2일 전**인 run의 예보 (`days_ahead=2`) |
+
+각 run의 발표시각(UTC 00/06/12/18Z 등)에 따라 `valid_time`까지의 실제 리드는 대략 **24~47h**(day1), **48~71h**(day2) 구간에 걸칩니다. 스키마 안정성을 위해 컬럼명·값은 유지합니다.
+
+**KMA 단기예보와 직접 비교**할 때는 `lead_time_h` 숫자를 1:1로 맞추지 말고, **발표일 차이 `days_ahead`**(Open-Meteo dayN ↔ KMA issue_date가 N일 앞선 슬롯)로 버킷팅·해석하세요. 동일 `valid_time`·`days_ahead`끼리 MAE/Brier를 계산하는 것이 맞습니다.
+
+## 알려진 한계
+
+### ASOS 강수(`rn`) 결측
+
+ASOS 시간자료 API는 `rn`(강수량)과 `rnQcflag`(품질검사: 0=정상, 1=오류, 9=결측)를 함께 제공합니다. `asos.py`는 **`rnQcflag==0`일 때만** 빈 `rn`을 무강수(0.0)로 해석하고, 오류·결측(1, 9)은 **행 자체를 생략**합니다.
+
+`rnQcflag`가 응답에 없고 `rn`도 비어 있으면 무강수와 결측을 구분할 수 없어 **강수 행을 생략**합니다. 예전처럼 무조건 0.0으로 채우면 실제 강수 시각이 빠져 **강수 빈도가 과소추정**됩니다.
+
 ## 설계 원칙
 
 1. **숫자는 코드가, 말은 LLM이** — 결정론적 pandas 처리
@@ -56,12 +77,13 @@ weather-verify/
 ├── src/
 │   ├── schema.py
 │   ├── core/                  # align, metrics, precip
-│   └── sources/               # asos, kma, openmeteo, kma_auth, kma_probe
+│   └── sources/               # asos, kma, store, openmeteo, kma_auth, kma_probe
 ├── tests/
 │   ├── fixtures/
 │   ├── test_align.py
 │   ├── test_asos.py
 │   ├── test_kma.py
+│   ├── test_kma_backfill.py
 │   ├── test_kma_auth.py
 │   ├── test_metrics.py
 │   ├── test_precip.py
@@ -100,7 +122,36 @@ python run_slice.py --truth proxy    # openmeteo_self_proxy (자기일관성만)
 ```bash
 cp .env.example .env   # KMA_API_KEY_DECODING 설정
 python -m src.sources.kma_probe
-python -m src.sources.kma --collect
+python -m src.sources.kma --collect    # 최신 발표 1건
+python -m src.sources.kma --backfill   # 오늘~2일 전 미저장 슬롯 소급
+```
+
+저장 경로: `data/parquet/source=kma_vilage_fcst/issue_date=YYYY-MM-DD/`
+
+#### crontab 예시 (KMA)
+
+```cron
+# 발표 10분 후 (02,05,08,11,14,17,20,23시 KST)
+10 2,5,8,11,14,17,20,23 * * * cd /path/weather-verify && .venv/bin/python -m src.sources.kma --collect >> logs/collect.log 2>&1
+# 일 1회 안전망 — 누락 슬롯 소급
+0 6 * * * cd /path/weather-verify && .venv/bin/python -m src.sources.kma --backfill >> logs/backfill.log 2>&1
+```
+
+### ASOS 실측 적재
+
+전일(D-1) 시간자료를 `source=ground_truth_asos` 파티션에 저장합니다.
+
+```bash
+python -m src.sources.asos --collect
+```
+
+저장 경로: `data/parquet/source=ground_truth_asos/issue_date=YYYY-MM-DD/`
+
+#### crontab 예시 (ASOS)
+
+```cron
+# 매일 07:00 — 전일 실측 확정 후 적재
+0 7 * * * cd /path/weather-verify && .venv/bin/python -m src.sources.asos --collect >> logs/asos_collect.log 2>&1
 ```
 
 ### 개발 (lint · test)
@@ -113,7 +164,7 @@ pytest -q -m network         # 라이브 API 테스트만 (로컬)
 
 ## 테스트
 
-현재 **44개** 오프라인 테스트. CI는 `ruff check`, `ruff format --check`, `pytest -m "not network"` 를 실행합니다.
+현재 **53개** 오프라인 테스트. CI는 `ruff check`, `ruff format --check`, `pytest -m "not network"` 를 실행합니다.
 
 ## 로드맵 (최종 목표 중심)
 

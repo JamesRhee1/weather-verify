@@ -24,9 +24,14 @@ SEOUL_LON = 126.9780
 ECMWF_MODEL = "ecmwf_ifs"
 PAST_DAYS = 14
 
+# previous_dayN → lead_time_h 라벨은 근사치(스키마 안정성을 위해 컬럼명·값 유지).
+# Open-Meteo previous_day1/2는 "발표일이 N일 전인 run"의 예보이지, 정확히 24h/48h 리드가 아님.
+# 실제 리드는 해당 run의 발표시각(UTC 00/06/12/18Z 등) 기준 valid_time까지 약 24~47h( day1 ),
+# 48~71h( day2 ) 구간에 걸친다. KMA와 직접 비교할 때는 lead_time_h 대신 발표일 차이
+# days_ahead(=1,2)로 버킷팅·해석할 것 — README "Open-Meteo 리드타임 근사" 참고.
 _FORECAST_MAP: tuple[tuple[str, int, str], ...] = (
-    ("temperature_2m_previous_day1", 24, SOURCE_OPENMETEO_ECMWF),
-    ("temperature_2m_previous_day2", 48, SOURCE_OPENMETEO_ECMWF),
+    ("temperature_2m_previous_day1", 24, SOURCE_OPENMETEO_ECMWF),  # ≈ days_ahead=1
+    ("temperature_2m_previous_day2", 48, SOURCE_OPENMETEO_ECMWF),  # ≈ days_ahead=2
 )
 _PROXY_TRUTH_KEY = "temperature_2m"
 
@@ -156,7 +161,7 @@ def fetch_seoul_ecmwf_forecasts(
     past_days: int = PAST_DAYS,
     session: requests.Session | None = None,
 ) -> pd.DataFrame:
-    """Open-Meteo ECMWF 예보 (24h/48h 리드타임)."""
+    """Open-Meteo ECMWF 예보 (lead_time_h=24/48은 days_ahead 1/2 근사 라벨)."""
     hourly = _fetch_hourly_payload(past_days=past_days, session=session)
     df = _forecasts_to_long(hourly, station=STATION_SEOUL, variable=VARIABLE_TEMPERATURE)
     if df.empty:

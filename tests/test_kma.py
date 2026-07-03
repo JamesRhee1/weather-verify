@@ -15,15 +15,13 @@ from src.schema import (
     VARIABLE_TEMPERATURE,
 )
 from src.sources.kma import (
-    UPSERT_KEYS,
-    attach_issue_time,
     compute_lead_time_h,
     parse_fcst_time,
     parse_issue_time,
     parse_pcp_value,
     parse_vilage_fcst_payload,
-    upsert_parquet,
 )
+from src.sources.store import UPSERT_KEYS, attach_issue_time, upsert_parquet
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "kma_vilage_fcst_sample.json"
 ISSUE_TIME = parse_issue_time("20260703", "1100")  # 2026-07-03 11:00 KST → UTC
@@ -85,8 +83,12 @@ def test_upsert_parquet_idempotent(tmp_path):
     staged = attach_issue_time(frame, ISSUE_TIME)
     issue_date = date(2026, 7, 3)
 
-    path1 = upsert_parquet(staged, data_dir=tmp_path, issue_date=issue_date)
-    path2 = upsert_parquet(staged, data_dir=tmp_path, issue_date=issue_date)
+    path1 = upsert_parquet(
+        staged, data_dir=tmp_path, issue_date=issue_date, source=SOURCE_KMA_VILAGE
+    )
+    path2 = upsert_parquet(
+        staged, data_dir=tmp_path, issue_date=issue_date, source=SOURCE_KMA_VILAGE
+    )
 
     assert path1 == path2
     stored = pd.read_parquet(path1)
@@ -102,14 +104,20 @@ def test_upsert_parquet_updates_duplicate_key(tmp_path):
     staged = attach_issue_time(frame, ISSUE_TIME)
     issue_date = date(2026, 7, 3)
 
-    upsert_parquet(staged, data_dir=tmp_path, issue_date=issue_date)
+    upsert_parquet(staged, data_dir=tmp_path, issue_date=issue_date, source=SOURCE_KMA_VILAGE)
 
     revised = staged.copy()
     mask = (revised["variable"] == VARIABLE_TEMPERATURE) & (revised["lead_time_h"] == 1)
     revised.loc[mask, "value"] = 99.0
-    upsert_parquet(revised, data_dir=tmp_path, issue_date=issue_date)
+    upsert_parquet(revised, data_dir=tmp_path, issue_date=issue_date, source=SOURCE_KMA_VILAGE)
 
-    stored = pd.read_parquet(tmp_path / "parquet" / "issue_date=2026-07-03" / "forecasts.parquet")
+    stored = pd.read_parquet(
+        tmp_path
+        / "parquet"
+        / f"source={SOURCE_KMA_VILAGE}"
+        / "issue_date=2026-07-03"
+        / "forecasts.parquet"
+    )
     row = stored[(stored["variable"] == VARIABLE_TEMPERATURE) & (stored["lead_time_h"] == 1)].iloc[
         0
     ]
