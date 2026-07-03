@@ -1,73 +1,80 @@
 # weather-verify
 
-한국 기상청 예보 vs 글로벌 모델 예보를 **실측(정답값) 대비 오차**로 정량 평가하는 시스템의 첫 수직 슬라이스입니다.
+한국 기상청 예보 vs 글로벌 모델 예보를 **실측(정답값) 대비** 정량 평가하는 시스템입니다.
 
-현재 범위는 **서울 1지점 · 기온(`temperature_2m`) 1변수 · 최근 2주**이며, Open-Meteo ECMWF 모델의 리드타임별 MAE를 계산합니다. 기상청 API는 별도 진단 스크립트로 키 검증 및 아카이브 깊이를 확인합니다.
+**최종 목표:** KMA 강수확률(POP) 예보 vs 글로벌 확률예보의 **Brier score / reliability diagram** 비교.
+
+현재는 서울 1지점 · 기온·강수 기초 파이프라인과 첫 수직 슬라이스(기온 MAE)까지 구현되어 있습니다.
 
 ## 현재 구현 상태
 
 | 구성요소 | 상태 | 설명 |
 |---|---|---|
-| 표준 스키마 (`src/schema.py`) | ✅ | long-format DataFrame 규약 |
-| 정렬·지표 (`src/core/`) | ✅ | 순수 pandas, 외부 의존성 0 |
-| Open-Meteo 소스 | ✅ | Previous Runs API → 표준 스키마 |
-| 첫 슬라이스 실행 (`run_slice.py`) | ✅ | 리드타임별 글로벌 MAE 표 출력 |
-| KMA 진단 (`kma_probe.py`) | ✅ | 인증키 검증 + 아카이브 깊이 프로브 |
-| 기상청 예보 소스·MAE 비교 | ⏳ | 미구현 |
-| cron 적재 | ⏳ | 미구현 (KMA API가 과거 3일만 제공) |
+| 표준 스키마 (`src/schema.py`) | ✅ | long-format 6컬럼 규약 |
+| 정렬 (`src/core/align.py`) | ✅ | 예보·정답 join, 순수 pandas |
+| 연속형 지표 (`metrics.py`) | ✅ | MAE, RMSE, 리드타임별 MAE |
+| 확률 지표 (`metrics.py`) | ✅ | Brier score, BSS, reliability table |
+| 강수 이진 변환 (`precip.py`) | ✅ | ≥0.1mm → 1/0 (Brier용) |
+| Open-Meteo 소스 | ✅ | ECMWF 예보 + `openmeteo_self_proxy` |
+| ASOS 실측 (`asos.py`) | ✅ | 기온·강수량 → `ground_truth_asos` |
+| KMA 적재 (`kma.py`) | ✅ | TMP/POP/PCP parquet·raw 저장 |
+| KMA 진단 (`kma_probe.py`) | ✅ | 키 검증 + 아카이브 깊이 |
+| 첫 슬라이스 (`run_slice.py`) | ✅ | `--truth asos\|proxy`, ECMWF MAE |
+| **POP Brier 파이프라인 end-to-end** | ⏳ | 적재 데이터 + align + 리포트 |
+| KMA vs 글로벌 MAE 비교 표 | ⏳ | 기온 중심 확장 |
 | 대시보드·LLM | ⏳ | 범위 밖 |
+| CI (ruff + pytest) | ✅ | GitHub Actions, `@network` 제외 |
 
-### KMA 아카이브 진단 결과 (2026-07-03 기준)
+### KMA 아카이브 진단 (2026-07-03)
 
-기상청 단기예보 API(`getVilageFcst`)는 **최근 약 3일치 발표 예보만** 조회 가능합니다.
+`getVilageFcst`는 **최근 약 3일치** 발표 예보만 조회 가능 → **cron 적재 필요** (`python -m src.sources.kma --collect`).
 
-- 오늘·어제 `base_date`: 정상 (`resultCode 00`)
-- 3일 이전: `최근 3일 간의 자료만 제공합니다` (`resultCode 10`)
-- **판정: cron 적재 필요** — 백테스트를 위해 오늘부터 예보를 저장해야 합니다.
+## 왜 `previous_day0`가 정답이 아닌가
+
+Open-Meteo Previous Runs API의 `temperature_2m_previous_day0`(라벨: `openmeteo_self_proxy`)는 **같은 ECMWF 모델이 과거에 발표한 단기예보**입니다. 실제 관측이 아닙니다.
+
+| 구분 | `openmeteo_self_proxy` | `ground_truth_asos` |
+|---|---|---|
+| 성격 | 모델 자기 예보 (과거 run) | 지상관측 실측 |
+| 용도 | 파이프라인 스모크·자기일관성 | **실제 검증 정답** |
+| 한계 | “맞췄다” ≠ “실제로 맞췄다” | API 키·D-1 지연 필요 |
+
+따라서 `run_slice.py` 기본값은 `--truth asos`이며, 프록시는 키 없음·API 실패 시에만 fallback합니다. **POP Brier 검증에는 ASOS 강수 이진 실측이 필수**입니다.
 
 ## 설계 원칙
 
-1. **숫자는 코드가, 말은 LLM이** — 모든 계산은 pandas로 결정론적 처리 (LLM 없음)
-2. **가장 위험한 곳을 순수 함수로 격리** — `core/align.py`, `core/metrics.py`는 네트워크·파일 의존성 0
-3. **외부 API 지저분함은 sources에 격리** — 코어로 새어 나가지 않음
+1. **숫자는 코드가, 말은 LLM이** — 결정론적 pandas 처리
+2. **위험한 계산은 `core/`에 격리** — 네트워크·파일 의존성 0
+3. **API 지저분함은 `sources/`에 격리**
 
 ## 프로젝트 구조
 
 ```
 weather-verify/
+├── pyproject.toml             # 의존성, pytest, ruff
+├── .github/workflows/ci.yml
 ├── src/
-│   ├── schema.py              # 표준 long-format 스키마
-│   ├── core/
-│   │   ├── align.py           # 예보·정답 join
-│   │   └── metrics.py         # MAE / RMSE / 리드타임별 MAE
-│   └── sources/
-│       ├── openmeteo.py       # Open-Meteo Previous Runs API
-│       └── kma_probe.py       # 기상청 API 키·아카이브 진단
+│   ├── schema.py
+│   ├── core/                  # align, metrics, precip
+│   └── sources/               # asos, kma, openmeteo, kma_auth, kma_probe
 ├── tests/
+│   ├── fixtures/
 │   ├── test_align.py
-│   └── test_metrics.py
-├── run_slice.py               # 첫 수직 슬라이스 엔트리포인트
-├── requirements.txt
-└── .env.example
+│   ├── test_asos.py
+│   ├── test_kma.py
+│   ├── test_kma_auth.py
+│   ├── test_metrics.py
+│   ├── test_precip.py
+│   ├── test_prob_metrics.py
+│   └── test_schema.py
+├── data/                      # KMA 적재 (gitignore)
+└── run_slice.py
 ```
-
-### 표준 스키마
-
-| 컬럼 | 설명 |
-|---|---|
-| `station` | 지점 ID (예: `seoul`) |
-| `valid_time` | 예보 유효시각 (UTC, timezone-aware) |
-| `lead_time_h` | 리드타임 시간 (정답 프록시는 `0`) |
-| `variable` | 변수명 (예: `temperature_2m`) |
-| `value` | float |
-| `source` | 출처 (예: `openmeteo_ecmwf`, `ground_truth`) |
-
-정답값(v0)은 Open-Meteo `previous_day0` 프록시이며, 추후 ASOS 실측으로 교체할 때도 동일 스키마를 유지합니다.
 
 ## 요구 사항
 
 - Python 3.10+
-- 인터넷 연결 (라이브 API 호출 시)
+- 라이브 API: 공공데이터포털 키 (KMA·ASOS)
 
 ## 설치
 
@@ -76,61 +83,57 @@ git clone https://github.com/JamesRhee1/weather-verify.git
 cd weather-verify
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
 ## 사용법
 
-### 1. Open-Meteo 교차검증 슬라이스
-
-API 키 없이 실행 가능합니다.
+### Open-Meteo 교차검증 슬라이스
 
 ```bash
-python run_slice.py
+python run_slice.py                  # 기본: ASOS 실측 정답
+python run_slice.py --truth proxy    # openmeteo_self_proxy (자기일관성만)
 ```
 
-출력 예시:
-
-```
-리드타임별 글로벌 모델 MAE (°C)
- lead_time_h    mae    n
-          24  0.544  504
-          48  0.771  504
-```
-
-API 실패 시 합성 데이터로 자동 fallback하며 `[fallback]` 메시지가 stderr에 출력됩니다.
-
-### 2. 기상청 API 진단
-
-[공공데이터포털](https://www.data.go.kr/data/15084084/openapi.do)에서 단기예보 API 활용신청 후 키를 설정합니다.
+### KMA API 진단 · 적재
 
 ```bash
-cp .env.example .env
-# .env 편집 — 일반 인증키(디코딩)를 KMA_API_KEY_DECODING에 입력
+cp .env.example .env   # KMA_API_KEY_DECODING 설정
 python -m src.sources.kma_probe
+python -m src.sources.kma --collect
 ```
 
-| 변수 | 설명 |
-|---|---|
-| `KMA_API_KEY_DECODING` | 일반 인증키 (`+`, `=` 포함 원본) |
-| `KMA_API_KEY_ENCODING` | 인코딩 인증키 (`%2B`, `%3D` 등, 선택) |
+### 개발 (lint · test)
 
-진단 스크립트는 키 검증 → 오늘부터 10일 전까지 `base_date` 프로브 → 자동 판정을 수행합니다.
+```bash
+ruff check . && ruff format .
+pytest -q                    # 기본: network 마커 제외
+pytest -q -m network         # 라이브 API 테스트만 (로컬)
+```
 
 ## 테스트
 
-```bash
-pytest -q
-```
+현재 **44개** 오프라인 테스트. CI는 `ruff check`, `ruff format --check`, `pytest -m "not network"` 를 실행합니다.
 
-현재 10개 테스트 (align 4, metrics 6).
+## 로드맵 (최종 목표 중심)
 
-## 로드맵
+### Phase 1 — 기반 ✅ (대부분 완료)
 
-- [ ] 기상청 예보 → 표준 스키마 변환 (`sources/kma.py`)
-- [ ] cron 적재 파이프라인 (발표시각 02/05/08/11/14/17/20/23시)
-- [ ] 기상청 MAE vs 글로벌 MAE 비교 표
-- [ ] ASOS 실측 정답값 연동
+- [x] 표준 스키마, align, MAE/RMSE
+- [x] KMA 적재 (POP/PCP/TMP), ASOS 실측
+- [x] Brier / BSS / reliability (`core/metrics.py`)
+- [x] 강수 이진 변환 (`core/precip.py`)
+
+### Phase 2 — POP 검증 파이프라인 ⏳
+
+- [ ] 적재된 KMA POP + ASOS 강수 이진 → align
+- [ ] 글로벌 모델 강수확률 소스 연동 (Open-Meteo 등)
+- [ ] 리드타임별 **Brier score · BSS · reliability diagram** 리포트
+- [ ] KMA vs 글로벌 확률예보 비교 표/차트
+
+### Phase 3 — 확장
+
+- [ ] 기온 MAE: KMA vs 글로벌 비교 표
 - [ ] 대시보드 UI
 
 ## 라이선스

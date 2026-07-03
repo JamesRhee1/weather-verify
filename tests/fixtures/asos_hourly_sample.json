@@ -1,0 +1,37 @@
+{
+  "response": {
+    "header": {
+      "resultCode": "00",
+      "resultMsg": "NORMAL_SERVICE"
+    },
+    "body": {
+      "dataType": "JSON",
+      "totalCount": 3,
+      "items": {
+        "item": [
+          {
+            "tm": "2026-06-01 12:00",
+            "stnId": 108,
+            "stnNm": "서울",
+            "ta": "22.3",
+            "rn": "0.0"
+          },
+          {
+            "tm": "2026-06-01 13:00",
+            "stnId": 108,
+            "stnNm": "서울",
+            "ta": "23.1",
+            "rn": "1.2"
+          },
+          {
+            "tm": "2026-06-01 14:00",
+            "stnId": 108,
+            "stnNm": "서울",
+            "ta": "",
+            "rn": "0.5"
+          }
+        ]
+      }
+    }
+  }
+}

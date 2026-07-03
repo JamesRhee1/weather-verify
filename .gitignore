@@ -5,9 +5,15 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+*.egg-info/
+dist/
+build/
 
 # 비밀
 .env
 
 # 로그
 logs/
+
+# 적재 데이터 (raw JSON, parquet)
+data/

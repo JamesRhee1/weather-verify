@@ -1,0 +1,85 @@
+{
+  "response": {
+    "header": {
+      "resultCode": "00",
+      "resultMsg": "NORMAL_SERVICE"
+    },
+    "body": {
+      "dataType": "JSON",
+      "items": {
+        "item": [
+          {
+            "baseDate": "20260703",
+            "baseTime": "1100",
+            "category": "TMP",
+            "fcstDate": "20260703",
+            "fcstTime": "1200",
+            "fcstValue": "25",
+            "nx": 60,
+            "ny": 127
+          },
+          {
+            "baseDate": "20260703",
+            "baseTime": "1100",
+            "category": "TMP",
+            "fcstDate": "20260703",
+            "fcstTime": "1500",
+            "fcstValue": "27",
+            "nx": 60,
+            "ny": 127
+          },
+          {
+            "baseDate": "20260703",
+            "baseTime": "1100",
+            "category": "POP",
+            "fcstDate": "20260703",
+            "fcstTime": "1200",
+            "fcstValue": "30",
+            "nx": 60,
+            "ny": 127
+          },
+          {
+            "baseDate": "20260703",
+            "baseTime": "1100",
+            "category": "POP",
+            "fcstDate": "20260703",
+            "fcstTime": "1500",
+            "fcstValue": "40",
+            "nx": 60,
+            "ny": 127
+          },
+          {
+            "baseDate": "20260703",
+            "baseTime": "1100",
+            "category": "PCP",
+            "fcstDate": "20260703",
+            "fcstTime": "1200",
+            "fcstValue": "강수없음",
+            "nx": 60,
+            "ny": 127
+          },
+          {
+            "baseDate": "20260703",
+            "baseTime": "1100",
+            "category": "PCP",
+            "fcstDate": "20260703",
+            "fcstTime": "1500",
+            "fcstValue": "1",
+            "nx": 60,
+            "ny": 127
+          },
+          {
+            "baseDate": "20260703",
+            "baseTime": "1100",
+            "category": "WSD",
+            "fcstDate": "20260703",
+            "fcstTime": "1200",
+            "fcstValue": "3",
+            "nx": 60,
+            "ny": 127
+          }
+        ]
+      }
+    }
+  }
+}

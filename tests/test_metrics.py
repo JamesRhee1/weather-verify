@@ -1,11 +1,11 @@
 """metrics 모듈 합성 데이터 테스트 (네트워크 없음)."""
+
 from __future__ import annotations
 
 import math
 
 import pandas as pd
 import pytest
-
 from src.core.metrics import compute_mae, compute_rmse, mae_by_lead_time
 
 
