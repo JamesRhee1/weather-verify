@@ -54,6 +54,53 @@ Open-Meteo Previous Runs의 `temperature_2m_previous_day1` / `previous_day2`는 
 
 **KMA 단기예보와 직접 비교**할 때는 `lead_time_h` 숫자를 1:1로 맞추지 말고, **발표일 차이 `days_ahead`**(Open-Meteo dayN ↔ KMA issue_date가 N일 앞선 슬롯)로 버킷팅·해석하세요. 동일 `valid_time`·`days_ahead`끼리 MAE/Brier를 계산하는 것이 맞습니다.
 
+## 왜 Previous Runs로 POP을 못 쓰는가
+
+Open-Meteo **Previous Runs API**는 `precipitation_probability_previous_dayN` 필드를 문서상 제공하지만, 실측 확인 시 **전 구간 null**입니다. 강수확률은 모델 출력에서 **파생 계산되는 변수**로, Previous Runs 아카이브에는 포함되지 않습니다.
+
+| 용도 | API | POP |
+|---|---|---|
+| 기온 백테스트·`run_slice` | Previous Runs (`previous_dayN`) | ❌ |
+| POP 검증·자체 아카이브 | **Forecast API** (전향 `--collect`) | ✅ |
+
+따라서 KMA `--collect`와 동일하게 **수집 시점의 Forecast API 응답을 parquet에 쌓아** POP 검증용 자체 아카이브를 만듭니다.
+
+### Open-Meteo 전향 예보 적재
+
+```bash
+python -m src.sources.openmeteo --collect
+```
+
+- **Forecast API** (`api.open-meteo.com/v1/forecast`): `temperature_2m`, `precipitation_probability`
+- 모델: `ecmwf_ifs025` → `openmeteo_ecmwf`, `gfs_seamless` → `openmeteo_gfs`
+- `issue_time` = **수집 시각(UTC, 시간 단위 절사)** — 실제 모델 init(00/06/12/18Z)과 다를 수 있는 근사
+- `lead_time_h` = `valid_time - issue_time` (정수 시간, `< 1` 제외)
+- **비교 기산일** = `issue_date` = `issue_time`의 UTC 날짜(수집 시작일)
+- POP은 **0~100 % 그대로** 저장 (`/100`은 지표 호출부 책임)
+
+저장 경로: `data/parquet/source=openmeteo_ecmwf|openmeteo_gfs/issue_date=YYYY-MM-DD/`
+
+#### crontab 예시 (Open-Meteo 전향)
+
+글로벌 모델 갱신(00/06/12/18 UTC) 직후 수집을 권장합니다.
+
+```cron
+# UTC 00/06/12/18시 15분 후 — 전향 예보 아카이브
+15 0,6,12,18 * * * cd /path/weather-verify && .venv/bin/python -m src.sources.openmeteo --collect >> logs/openmeteo_collect.log 2>&1
+```
+
+legacy Previous Runs 적재(기온 백테스트용, POP 없음): `python -m src.sources.openmeteo --collect-legacy`
+
+### POP 검증 리포트
+
+```bash
+python run_pop_report.py
+python run_pop_report.py --start 2026-07-01 --end 2026-07-03
+python run_pop_report.py --truth-mode point   # 정각 1시간 (기본: window_3h)
+```
+
+KMA·글로벌 POP vs ASOS 강수 이진 — 소스×6h 리드버킷별 Brier/BSS. `reports/` 에 reliability CSV.
+
 ## 알려진 한계
 
 ### ASOS 강수(`rn`) 결측
@@ -76,7 +123,7 @@ weather-verify/
 ├── .github/workflows/ci.yml
 ├── src/
 │   ├── schema.py
-│   ├── core/                  # align, metrics, precip
+│   ├── core/                  # align, metrics, precip, report
 │   └── sources/               # asos, kma, store, openmeteo, kma_auth, kma_probe
 ├── tests/
 │   ├── fixtures/
@@ -86,11 +133,14 @@ weather-verify/
 │   ├── test_kma_backfill.py
 │   ├── test_kma_auth.py
 │   ├── test_metrics.py
+│   ├── test_openmeteo.py
 │   ├── test_precip.py
+│   ├── test_pop_report.py
 │   ├── test_prob_metrics.py
 │   └── test_schema.py
 ├── data/                      # KMA 적재 (gitignore)
-└── run_slice.py
+├── run_slice.py
+└── run_pop_report.py
 ```
 
 ## 요구 사항
@@ -164,7 +214,7 @@ pytest -q -m network         # 라이브 API 테스트만 (로컬)
 
 ## 테스트
 
-현재 **53개** 오프라인 테스트. CI는 `ruff check`, `ruff format --check`, `pytest -m "not network"` 를 실행합니다.
+현재 **69개** 오프라인 테스트. CI는 `ruff check`, `ruff format --check`, `pytest -m "not network"` 를 실행합니다.
 
 ## 로드맵 (최종 목표 중심)
 

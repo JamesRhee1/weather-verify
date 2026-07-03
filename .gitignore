@@ -17,3 +17,6 @@ logs/
 
 # 적재 데이터 (raw JSON, parquet)
 data/
+
+# 리포트 산출물
+reports/

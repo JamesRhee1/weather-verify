@@ -1,0 +1,14 @@
+{
+  "hourly": {
+    "time": [
+      "2026-07-03T11:00",
+      "2026-07-03T12:00",
+      "2026-07-03T13:00",
+      "2026-07-03T14:00"
+    ],
+    "temperature_2m_ecmwf_ifs025": [24.0, 25.0, 26.0, 27.0],
+    "temperature_2m_gfs_seamless": [23.5, 24.5, 25.5, 26.5],
+    "precipitation_probability_ecmwf_ifs025": [10, 20, 30, 40],
+    "precipitation_probability_gfs_seamless": [5, 15, 25, 35]
+  }
+}
