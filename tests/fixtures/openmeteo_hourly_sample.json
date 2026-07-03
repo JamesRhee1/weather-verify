@@ -1,0 +1,17 @@
+{
+  "hourly": {
+    "time": [
+      "2026-06-01T12:00",
+      "2026-06-01T13:00",
+      "2026-06-01T14:00"
+    ],
+    "temperature_2m_previous_day1_ecmwf_ifs": [22.0, 23.5, null],
+    "temperature_2m_previous_day2_ecmwf_ifs": [21.5, 22.8, 24.0],
+    "temperature_2m_previous_day1_gfs_global": [21.8, 23.0, 24.2],
+    "temperature_2m_previous_day2_gfs_global": [21.0, 22.5, 23.8],
+    "precipitation_probability_previous_day1_ecmwf_ifs": [10, 45, 80],
+    "precipitation_probability_previous_day2_ecmwf_ifs": [5, 30, 60],
+    "precipitation_probability_previous_day1_gfs_global": [0, 55, 70],
+    "precipitation_probability_previous_day2_gfs_global": [15, 25, 50]
+  }
+}
