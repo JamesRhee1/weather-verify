@@ -10,6 +10,8 @@ import pandas as pd
 import pytest
 from src.schema import SOURCE_GROUND_TRUTH_ASOS, VARIABLE_PCP, VARIABLE_TEMPERATURE
 from src.sources.asos import (
+    _PAGE_SIZE,
+    asos_hourly_params,
     parse_asos_items_to_long,
     parse_asos_payload,
     parse_observation_time,
@@ -17,6 +19,18 @@ from src.sources.asos import (
 )
 
 FIXTURE = Path(__file__).parent / "fixtures" / "asos_hourly_sample.json"
+
+
+def test_asos_page_size_below_api_limit():
+    assert _PAGE_SIZE < 1000
+
+
+def test_asos_hourly_params_stn_ids_is_string():
+    start = pd.Timestamp("2026-07-05", tz="Asia/Seoul").to_pydatetime()
+    end = pd.Timestamp("2026-07-05 23:00", tz="Asia/Seoul").to_pydatetime()
+    params = asos_hourly_params(start, end)
+    assert params["numOfRows"] < 1000
+    assert params["stnIds"] == "108"
 
 
 @pytest.fixture

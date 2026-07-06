@@ -29,7 +29,8 @@ from src.sources.store import (
 )
 
 PAST_DAYS = 14
-_PAGE_SIZE = 1000
+# ASOS API: numOfRows=1000 이면 resultCode=99 (상한 999)
+_PAGE_SIZE = 999
 
 _ASOS_FIELD_MAP: tuple[tuple[str, str], ...] = (
     ("ta", VARIABLE_TEMPERATURE),
@@ -63,7 +64,7 @@ def asos_hourly_params(
         "startHh": start_kst.strftime("%H"),
         "endDt": end_kst.strftime("%Y%m%d"),
         "endHh": end_kst.strftime("%H"),
-        "stnIds": stn_id,
+        "stnIds": str(stn_id),
     }
 
 
