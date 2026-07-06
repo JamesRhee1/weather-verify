@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+import logging
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,8 @@ import pandas as pd
 
 from src.schema import SOURCE_KMA_VILAGE, STATION_SEOUL
 from src.sources.kma_auth import ROOT
+
+logger = logging.getLogger(__name__)
 
 DATA_DIR = ROOT / "data"
 UPSERT_KEYS = ("source", "issue_time", "station", "valid_time", "variable")
@@ -49,6 +52,31 @@ def attach_issue_time(frame: pd.DataFrame, issue_time: datetime) -> pd.DataFrame
     return out
 
 
+def drop_future_issue_rows(
+    frame: pd.DataFrame,
+    *,
+    now: datetime | None = None,
+    log_context: str = "",
+) -> pd.DataFrame:
+    """``issue_time`` 이 현재 UTC 보다 미래인 행 제거 (모든 소스 공통 방어)."""
+    if frame.empty or "issue_time" not in frame.columns:
+        return frame
+
+    now_ts = pd.Timestamp((now or datetime.now(timezone.utc)).astimezone(timezone.utc))
+    issue = pd.to_datetime(frame["issue_time"], utc=True)
+    future = issue > now_ts
+    dropped = int(future.sum())
+    if dropped:
+        suffix = f" ({log_context})" if log_context else ""
+        logger.warning(
+            "Dropping %d row(s) with issue_time > now (UTC)%s",
+            dropped,
+            suffix,
+        )
+        return frame.loc[~future].reset_index(drop=True)
+    return frame
+
+
 def save_raw_json(
     payload: dict[str, Any],
     path: Path,
@@ -70,6 +98,7 @@ def upsert_parquet(staged: pd.DataFrame, *, data_dir: Path, issue_date: date, so
     staged = staged.copy()
     staged["issue_time"] = pd.to_datetime(staged["issue_time"], utc=True)
     staged["valid_time"] = pd.to_datetime(staged["valid_time"], utc=True)
+    staged = drop_future_issue_rows(staged, log_context=f"source={source}")
 
     if path.is_file():
         existing = pd.read_parquet(path)

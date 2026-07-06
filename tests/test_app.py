@@ -45,3 +45,31 @@ def test_app_import_and_scan_collection_status(tmp_path: Path):
     kma = status[status["source"] == SOURCE_KMA_VILAGE].iloc[0]
     assert kma["total_rows"] == 1
     assert not kma["stale"]
+
+
+def test_format_status_elapsed_nan_as_em_dash():
+    from app import _format_status_table
+
+    status = pd.DataFrame(
+        [
+            {
+                "source": "ground_truth_asos",
+                "recent_issue_time": pd.NaT,
+                "total_rows": 0,
+                "issue_date_count": 0,
+                "elapsed_hours": float("nan"),
+                "stale": True,
+            },
+            {
+                "source": "kma_vilage_fcst",
+                "recent_issue_time": pd.Timestamp("2026-07-03T06:00", tz="UTC"),
+                "total_rows": 1,
+                "issue_date_count": 1,
+                "elapsed_hours": None,
+                "stale": True,
+            },
+        ]
+    )
+    display = _format_status_table(status)
+    assert display.iloc[0]["elapsed"] == "—"
+    assert display.iloc[1]["elapsed"] == "—"

@@ -57,7 +57,7 @@ def scan_collection_status(
             recent_issue_time = pd.to_datetime(frame["issue_time"], utc=True).max()
 
         elapsed: timedelta | None = None
-        if recent_issue_time is not None:
+        if recent_issue_time is not None and pd.notna(recent_issue_time):
             recent_dt = recent_issue_time.to_pydatetime()
             if recent_dt.tzinfo is None:
                 recent_dt = recent_dt.replace(tzinfo=timezone.utc)
@@ -114,7 +114,7 @@ def _format_status_table(status: pd.DataFrame) -> pd.DataFrame:
             lambda ts: ts.isoformat() if pd.notna(ts) else "—"
         )
     display["elapsed"] = display.apply(
-        lambda r: f"{r['elapsed_hours']}h" if r["elapsed_hours"] is not None else "—",
+        lambda r: f"{r['elapsed_hours']}h" if pd.notna(r["elapsed_hours"]) else "—",
         axis=1,
     )
     return display[

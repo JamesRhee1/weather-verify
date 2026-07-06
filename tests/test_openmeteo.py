@@ -101,9 +101,28 @@ def test_approximate_legacy_issue_time_uses_utc_cycle():
 def test_legacy_attach_and_partition(sample_legacy_hourly):
     entries = _legacy_forecast_entries(("ecmwf_ifs", "gfs_global"))
     frame = _legacy_forecasts_to_long(sample_legacy_hourly, station="seoul", entries=entries)
-    staged = attach_legacy_forecast_issue_times(frame)
+    now = pd.Timestamp("2026-06-02 00:00", tz="UTC").to_pydatetime()
+    staged = attach_legacy_forecast_issue_times(frame, now=now)
     parts = partition_frames_by_source_issue_date(staged)
     assert (SOURCE_OPENMETEO_ECMWF, date(2026, 5, 31)) in parts
+
+
+def test_legacy_attach_drops_future_issue_time():
+    frame = pd.DataFrame(
+        [
+            {
+                "station": "seoul",
+                "valid_time": pd.Timestamp("2026-07-09T18:00", tz="UTC"),
+                "lead_time_h": 24,
+                "variable": VARIABLE_TEMPERATURE,
+                "value": 25.0,
+                "source": SOURCE_OPENMETEO_ECMWF,
+            }
+        ]
+    )
+    now = pd.Timestamp("2026-07-03T12:00", tz="UTC").to_pydatetime()
+    staged = attach_legacy_forecast_issue_times(frame, now=now)
+    assert staged.empty
 
 
 # --- forward Forecast API ---

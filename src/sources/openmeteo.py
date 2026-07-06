@@ -26,6 +26,7 @@ from src.schema import (
 from src.sources.store import (
     DATA_DIR,
     attach_issue_time,
+    drop_future_issue_rows,
     save_raw_json,
     upsert_parquet,
 )
@@ -432,8 +433,16 @@ def _legacy_forecasts_to_long(
     return frame
 
 
-def attach_legacy_forecast_issue_times(frame: pd.DataFrame) -> pd.DataFrame:
-    """legacy Previous Runs 행에 근사 ``issue_time`` 부착."""
+def attach_legacy_forecast_issue_times(
+    frame: pd.DataFrame,
+    *,
+    now: datetime | None = None,
+) -> pd.DataFrame:
+    """legacy Previous Runs 행에 근사 ``issue_time`` 부착.
+
+    ``valid_time - days_ahead`` 근사는 미래 ``valid_time`` 에서 수집 시각보다
+    미래 ``issue_time`` 이 될 수 있으므로, 해당 행은 제외한다.
+    """
     if frame.empty:
         return frame.copy()
     out = frame.copy()
@@ -442,7 +451,11 @@ def attach_legacy_forecast_issue_times(frame: pd.DataFrame) -> pd.DataFrame:
         for vt, lt in zip(out["valid_time"], out["lead_time_h"], strict=False)
     ]
     out["issue_time"] = issue_times
-    return out
+    return drop_future_issue_rows(
+        out,
+        now=now,
+        log_context="openmeteo legacy attach",
+    )
 
 
 def partition_frames_by_source_issue_date(
@@ -600,7 +613,7 @@ def collect_openmeteo_legacy_previous_runs(
         / f"legacy_{collected_at.strftime('%Y%m%d_%H%M')}_{station}.json",
     )
 
-    staged = attach_legacy_forecast_issue_times(frame)
+    staged = attach_legacy_forecast_issue_times(frame, now=collected_at)
     parquet_paths: list[Path] = []
     for (source, issue_date), part in partition_frames_by_source_issue_date(staged).items():
         if source not in OPENMETEO_FORECAST_SOURCES:

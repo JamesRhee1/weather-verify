@@ -38,6 +38,7 @@
 | ASOS 실측 | `python -m src.sources.asos --collect` | [ASOS API 활용신청](https://www.data.go.kr/data/15057210/openapi.do) 별도 필요 |
 | POP 리포트 | `python run_pop_report.py` | ASOS·POP parquet 필요 |
 | 대시보드 | `streamlit run app.py` | 내부 확인용 |
+| 미래 issue_time 정리 | `python scripts/clean_future_issue.py --dry-run` | `--apply` 로 실제 삭제 |
 
 ### KMA 아카이브 진단 (2026-07-03)
 
