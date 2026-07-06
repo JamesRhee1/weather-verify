@@ -4,9 +4,9 @@
 
 **최종 목표:** KMA 강수확률(POP) 예보 vs 글로벌 확률예보의 **Brier score / reliability diagram** 비교.
 
-현재는 서울 1지점 · 기온·강수 기초 파이프라인과 첫 수직 슬라이스(기온 MAE)까지 구현되어 있습니다.
+현재는 서울 1지점 · cron 적재 parquet 기반 **POP Brier 리포트**(`run_pop_report.py`)와 임시 Streamlit 대시보드까지 구현되어 있습니다. ASOS 실측 적재·cron 운영이 붙으면 end-to-end 검증이 가능합니다.
 
-## 현재 구현 상태
+## 현재 구현 상태 (2026-07-06)
 
 | 구성요소 | 상태 | 설명 |
 |---|---|---|
@@ -14,16 +14,30 @@
 | 정렬 (`src/core/align.py`) | ✅ | 예보·정답 join, 순수 pandas |
 | 연속형 지표 (`metrics.py`) | ✅ | MAE, RMSE, 리드타임별 MAE |
 | 확률 지표 (`metrics.py`) | ✅ | Brier score, BSS, reliability table |
+| POP 리포트 (`core/report.py`) | ✅ | parquet 로드·align·소스×6h 버킷 지표 |
+| `run_pop_report.py` | ✅ | CLI 리포트 + `reports/` reliability CSV |
 | 강수 이진 변환 (`precip.py`) | ✅ | ≥0.1mm → 1/0 (Brier용) |
-| Open-Meteo 소스 | ✅ | ECMWF 예보 + `openmeteo_self_proxy` |
-| ASOS 실측 (`asos.py`) | ✅ | 기온·강수량 → `ground_truth_asos` |
-| KMA 적재 (`kma.py`) | ✅ | TMP/POP/PCP parquet·raw 저장 |
+| Open-Meteo 전향 적재 | ✅ | Forecast API POP·기온 (`--collect`) |
+| Open-Meteo legacy | ✅ | Previous Runs 기온 백테스트 (`--collect-legacy`) |
+| ASOS 실측 (`asos.py`) | ✅ | 기온·강수량 → `ground_truth_asos` (API 별도 신청) |
+| KMA 적재 (`kma.py`) | ✅ | TMP/POP/PCP, `--collect` / `--backfill` |
 | KMA 진단 (`kma_probe.py`) | ✅ | 키 검증 + 아카이브 깊이 |
 | 첫 슬라이스 (`run_slice.py`) | ✅ | `--truth asos\|proxy`, ECMWF MAE |
-| **POP Brier 파이프라인 end-to-end** | ⏳ | 적재 데이터 + align + 리포트 |
+| 임시 대시보드 (`app.py`) | ✅ | Streamlit parquet 뷰어 (`pip install -e ".[ui]"`) |
+| **POP end-to-end (실데이터)** | ⏳ | ASOS parquet 적재 + cron 누적 필요 |
 | KMA vs 글로벌 MAE 비교 표 | ⏳ | 기온 중심 확장 |
-| 대시보드·LLM | ⏳ | 범위 밖 |
-| CI (ruff + pytest) | ✅ | GitHub Actions, `@network` 제외 |
+| CI (ruff + pytest) | ✅ | GitHub Actions, 70개 오프라인 테스트 |
+
+### 운영 체크리스트
+
+| 단계 | 명령 | 비고 |
+|---|---|---|
+| KMA 예보 | `python -m src.sources.kma --collect` | 3h마다 cron |
+| KMA 소급 | `python -m src.sources.kma --backfill` | 일 1회 |
+| 글로벌 POP | `python -m src.sources.openmeteo --collect` | UTC 00/06/12/18 직후 |
+| ASOS 실측 | `python -m src.sources.asos --collect` | [ASOS API 활용신청](https://www.data.go.kr/data/15057210/openapi.do) 별도 필요 |
+| POP 리포트 | `python run_pop_report.py` | ASOS·POP parquet 필요 |
+| 대시보드 | `streamlit run app.py` | 내부 확인용 |
 
 ### KMA 아카이브 진단 (2026-07-03)
 
@@ -128,6 +142,7 @@ weather-verify/
 ├── tests/
 │   ├── fixtures/
 │   ├── test_align.py
+│   ├── test_app.py
 │   ├── test_asos.py
 │   ├── test_kma.py
 │   ├── test_kma_backfill.py
@@ -139,6 +154,7 @@ weather-verify/
 │   ├── test_prob_metrics.py
 │   └── test_schema.py
 ├── data/                      # KMA 적재 (gitignore)
+├── app.py                     # 임시 Streamlit 대시보드
 ├── run_slice.py
 └── run_pop_report.py
 ```
@@ -212,9 +228,16 @@ pytest -q                    # 기본: network 마커 제외
 pytest -q -m network         # 라이브 API 테스트만 (로컬)
 ```
 
+### 임시 대시보드 (Streamlit)
+
+```bash
+pip install -e ".[ui]"
+streamlit run app.py
+```
+
 ## 테스트
 
-현재 **69개** 오프라인 테스트. CI는 `ruff check`, `ruff format --check`, `pytest -m "not network"` 를 실행합니다.
+현재 **70개** 오프라인 테스트. CI는 `ruff check`, `ruff format --check`, `pytest -m "not network"` 를 실행합니다.
 
 ## 로드맵 (최종 목표 중심)
 
@@ -225,17 +248,19 @@ pytest -q -m network         # 라이브 API 테스트만 (로컬)
 - [x] Brier / BSS / reliability (`core/metrics.py`)
 - [x] 강수 이진 변환 (`core/precip.py`)
 
-### Phase 2 — POP 검증 파이프라인 ⏳
+### Phase 2 — POP 검증 파이프라인 ⏳ (코드 완료, 데이터 적재 중)
 
-- [ ] 적재된 KMA POP + ASOS 강수 이진 → align
-- [ ] 글로벌 모델 강수확률 소스 연동 (Open-Meteo 등)
-- [ ] 리드타임별 **Brier score · BSS · reliability diagram** 리포트
-- [ ] KMA vs 글로벌 확률예보 비교 표/차트
+- [x] KMA·Open-Meteo POP parquet 적재 경로
+- [x] ASOS 강수 이진 align (`core/report.py`, window_3h / point)
+- [x] 리드타임별 **Brier score · BSS · reliability** (`run_pop_report.py`)
+- [x] 임시 Streamlit 대시보드 (`app.py`)
+- [ ] ASOS cron 적재 + 충분한 기간 누적 후 **실데이터 리포트 검증**
+- [ ] KMA vs 글로벌 확률예보 비교 차트·자동 리포트
 
 ### Phase 3 — 확장
 
 - [ ] 기온 MAE: KMA vs 글로벌 비교 표
-- [ ] 대시보드 UI
+- [ ] 정식 대시보드 UI (현재 `app.py`는 임시 뷰어)
 
 ## 라이선스
 
