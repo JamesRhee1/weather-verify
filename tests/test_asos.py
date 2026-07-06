@@ -71,6 +71,11 @@ def test_parse_rn_qcflag_zero_empty_rn_is_no_rain():
     assert parse_rn_observation(item) == 0.0
 
 
+def test_parse_rn_qcflg_zero_empty_rn_is_no_rain():
+    item = {"rn": "", "rnQcflg": "0"}
+    assert parse_rn_observation(item) == 0.0
+
+
 def test_parse_rn_qcflag_missing_skips_row():
     item = {"rn": "", "rnQcflag": "9"}
     assert parse_rn_observation(item) is None
@@ -78,11 +83,26 @@ def test_parse_rn_qcflag_missing_skips_row():
     assert frame.empty
 
 
-def test_parse_rn_without_qcflag_blank_rn_skips_row():
-    item = {"rn": ""}
+def test_parse_rn_blank_with_empty_qcflg_and_ta_is_no_rain():
+    """실측 API: rn='', rnQcflg='' + ta 정상 → 무강수 0.0."""
+    item = {"rn": "", "rnQcflg": "", "ta": "24.4"}
+    assert parse_rn_observation(item) == 0.0
+    frame = parse_asos_items_to_long([{"tm": "2026-07-05 01:00", **item}])
+    pcp = frame[frame["variable"] == VARIABLE_PCP]
+    assert len(pcp) == 1
+    assert pcp.iloc[0]["value"] == 0.0
+
+
+def test_parse_rn_qcflg_nine_blank_rn_skips_even_with_ta():
+    item = {"rn": "", "rnQcflg": "9", "ta": "28.9"}
     assert parse_rn_observation(item) is None
+
+
+def test_parse_rn_without_qcflag_blank_rn_stores_zero_when_ta_present():
     frame = parse_asos_items_to_long([{"tm": "2026-06-01 16:00", "ta": "20.0", "rn": ""}])
-    assert frame["variable"].tolist() == [VARIABLE_TEMPERATURE]
+    assert set(frame["variable"]) == {VARIABLE_TEMPERATURE, VARIABLE_PCP}
+    pcp = frame[frame["variable"] == VARIABLE_PCP].iloc[0]
+    assert pcp["value"] == 0.0
 
 
 def test_parse_rn_without_qcflag_numeric_rn_ok():

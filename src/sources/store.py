@@ -114,6 +114,24 @@ def upsert_parquet(staged: pd.DataFrame, *, data_dir: Path, issue_date: date, so
     return path
 
 
+def load_stored_issue_dates(
+    data_dir: Path,
+    issue_dates: list[date],
+    *,
+    source: str,
+) -> set[date]:
+    """파티션 parquet 에 비어 있지 않은 issue_date 집합."""
+    stored: set[date] = set()
+    for issue_date in issue_dates:
+        path = parquet_partition_path(data_dir, issue_date, source)
+        if not path.is_file():
+            continue
+        frame = pd.read_parquet(path)
+        if not frame.empty:
+            stored.add(issue_date)
+    return stored
+
+
 def load_stored_issue_times(
     data_dir: Path,
     issue_dates: list[date],
